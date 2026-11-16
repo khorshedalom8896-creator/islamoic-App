@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:adhan/adhan.dart';
@@ -34,11 +33,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Tasbih Variables
   int _tasbihCount = 0;
-
-  // Prayer Times Variables
-  String _locationStatus = "লোকেশন লোড হচ্ছে...";
+  String _locationStatus = "Loading location...";
   String _fajrTime = "--:--";
   String _maghribTime = "--:--";
 
@@ -51,7 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _determinePositionAndCalculateTimes();
   }
 
-  // Local Storage থেকে তাসবিহ কাউন্ট লোড করা
   Future<void> _loadTasbihCount() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -59,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // তাসবিহ কাউন্ট সেভ এবং বাড়ানো
   Future<void> _incrementTasbih() async {
     setState(() {
       _tasbihCount++;
@@ -68,7 +62,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setInt('tasbih_count', _tasbihCount);
   }
 
-  // তাসবিহ রিসেট করা
   Future<void> _resetTasbih() async {
     setState(() {
       _tasbihCount = 0;
@@ -77,7 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setInt('tasbih_count', 0);
   }
 
-  // জিপিএস লোকেশন ও নামাজের সময় বের করার ফাংশন
   Future<void> _determinePositionAndCalculateTimes() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -85,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
-        _locationStatus = "দয়া করে জিপিএস লোকেশন অন করুন।";
+        _locationStatus = "Please enable GPS location.";
       });
       return;
     }
@@ -95,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         setState(() {
-          _locationStatus = "লোকেশন পারমিশন দেওয়া হয়নি।";
+          _locationStatus = "Location permission denied.";
         });
         return;
       }
@@ -106,36 +98,34 @@ class _HomeScreenState extends State<HomeScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      // Adhan প্যাক দিয়ে নামাজের সময় হিসাব করা
       final myCoordinates = Coordinates(position.latitude, position.longitude);
       final params = CalculationMethod.karachi.getParameters();
       params.madhab = Madhab.hanafi;
       
-      // আজকের তারিখ
-      final date = DateComponents.from(DateTime.now());
+      final now = DateTime.now();
+      final date = DateComponents(now.year, now.month, now.day);
       final prayerTimes = PrayerTimes(myCoordinates, date, params);
 
       setState(() {
-        _locationStatus = "সঠিক লোকেশন পাওয়া গেছে (Lat: ${position.latitude.toStringAsFixed(2)}, Lon: ${position.longitude.toStringAsFixed(2)})";
+        _locationStatus = "Location found successfully";
         _fajrTime = _formatTime(prayerTimes.fajr);
         _maghribTime = _formatTime(prayerTimes.maghrib);
       });
     } catch (e) {
       setState(() {
-        _locationStatus = "লোকেশন পেতে সমস্যা হয়েছে: $e";
+        _locationStatus = "Failed to get location or times";
       });
     }
   }
 
   String _formatTime(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    final hour = localTime.hour > 12 ? localTime.hour - 12 : localTime.hour;
+    final hour = localTime.hour > 12 ? localTime.hour - 12 : (localTime.hour == 0 ? 12 : localTime.hour);
     final minute = localTime.minute.toString().padLeft(2, '0');
     final period = localTime.hour >= 12 ? 'PM' : 'AM';
     return "$hour:$minute $period";
   }
 
-  // আজান বা অডিও টেস্ট করার ফাংশন
   Future<void> _playTestAthan() async {
     const audioUrl = "https://islamicfinder.org/audio/athan/makkah_adhan.mp3";
     await _audioPlayer.play(UrlSource(audioUrl));
@@ -145,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ইসলামিক লাইফ অ্যাপ'),
+        title: const Text('Islamic Life App'),
         centerTitle: true,
         backgroundColor: Colors.teal.shade700,
       ),
@@ -154,7 +144,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ১. লোকেশন ও নামাজের সময় কার্ড
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -164,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '🌍 আন্তর্জাতিক নামাজের ও সেহরি/ইফতার সময়',
+                      '🌍 Prayer Times & Sehri/Iftar',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal),
                     ),
                     const SizedBox(height: 8),
@@ -173,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('🌅 সেহরি শেষ (ফজর):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                        const Text('🌅 Sehri Ends (Fajr):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                         Text(_fajrTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.indigo)),
                       ],
                     ),
@@ -181,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('🌇 ইফতার শুরু (মাগরিব):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                        const Text('🌇 Iftar Starts (Maghrib):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                         Text(_maghribTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
                       ],
                     ),
@@ -190,8 +179,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // ২. ডিজিটাল তাসবিহ সেকশন
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -200,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     const Text(
-                      '📿 ডিজিটাল তাসবিহ কাউন্টার',
+                      '📿 Digital Tasbih Counter',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal),
                     ),
                     const SizedBox(height: 20),
@@ -215,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ElevatedButton.icon(
                           onPressed: _incrementTasbih,
                           icon: const Icon(Icons.add),
-                          label: const Text('গণনা করুন', style: TextStyle(fontSize: 16)),
+                          label: const Text('Count', style: TextStyle(fontSize: 16)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.teal,
                             foregroundColor: Colors.white,
@@ -226,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         IconButton(
                           onPressed: _resetTasbih,
                           icon: const Icon(Icons.refresh, color: Colors.red, size: 30),
-                          tooltip: 'রিসেট করুন',
+                          tooltip: 'Reset',
                         ),
                       ],
                     ),
@@ -235,12 +222,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // ৩. আজান অডিও টেস্ট বাটন
             ElevatedButton.icon(
               onPressed: _playTestAthan,
               icon: const Icon(Icons.volume_up),
-              label: const Text('আজানের অডিও টেস্ট করুন', style: TextStyle(fontSize: 16)),
+              label: const Text('Test Athan Audio', style: TextStyle(fontSize: 16)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.indigo,
                 foregroundColor: Colors.white,
