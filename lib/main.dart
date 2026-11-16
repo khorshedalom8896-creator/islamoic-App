@@ -16,7 +16,7 @@ class IslamicApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Islamic Azan & Prayer Times',
+      title: 'Islamic Prayer & Azan',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.teal,
@@ -47,8 +47,8 @@ class _PrayerHomePageState extends State<PrayerHomePage> {
     super.initState();
     _determinePositionAndCalculatePrayerTimes();
 
-    // প্রতি ১ মিনিট পরপর চেক করবে নামাজের সময় হয়েছে কিনা
-    _timeCheckTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+    // প্রতি ৩০ সেকেন্ড পর পর চেক করবে নামাজের সময় হয়েছে কিনা
+    _timeCheckTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkPrayerTimeAndPlayAzan();
     });
   }
@@ -65,43 +65,41 @@ class _PrayerHomePageState extends State<PrayerHomePage> {
     bool serviceEnabled;
     LocationPermission permission;
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() {
-        _locationStatus = "Please turn on device GPS/Location.";
-      });
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
+    try {
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
         setState(() {
-          _locationStatus = "Location permission denied.";
+          _locationStatus = "Please turn on device GPS/Location.";
         });
         return;
       }
-    }
 
-    if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        _locationStatus = "Location permissions are permanently denied.";
-      });
-      return;
-    }
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _locationStatus = "Location permission denied.";
+          });
+          return;
+        }
+      }
 
-    try {
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _locationStatus = "Location permissions are permanently denied.";
+        });
+        return;
+      }
+
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
       final coordinates = Coordinates(position.latitude, position.longitude);
-      // বিশ্বব্যাপী গ্রহণযোগ্য ক্যালকুলেশন মেথড (Muslim World League)
       final params = CalculationMethod.muslim_world_league.getParameters();
       params.madhab = Madhab.hanafi;
 
-      // ইউজারের লোকাল টাইম অনুযায়ী আজকের তারিখ
       final date = DateComponents.from(DateTime.now());
       final prayerTimes = PrayerTimes(coordinates, date, params);
 
@@ -111,12 +109,12 @@ class _PrayerHomePageState extends State<PrayerHomePage> {
       });
     } catch (e) {
       setState(() {
-        _locationStatus = "Error getting location: $e";
+        _locationStatus = "Error: $e";
       });
     }
   }
 
-  // অটোমেটিক ওয়াক্ত মিললে মক্কার আজান বাজানোর লজিক
+  // অটোমেটিক ওয়াক্ত মিললে আজান বাজানোর লজিক
   void _checkPrayerTimeAndPlayAzan() {
     if (_prayerTimes == null) return;
 
@@ -136,17 +134,16 @@ class _PrayerHomePageState extends State<PrayerHomePage> {
     else if (currentTimeFormatted == maghrib) currentPrayerName = "Maghrib";
     else if (currentTimeFormatted == isha) currentPrayerName = "Isha";
 
-    // একই ওয়াক্তে বারবার যেন বেজে না ওঠে, তাই চেক করা হচ্ছে
     if (currentPrayerName.isNotEmpty && _lastPlayedPrayer != currentPrayerName) {
       _lastPlayedPrayer = currentPrayerName;
       _playMakkahAzan();
     }
   }
 
-  // মক্কার সুন্দর আজানের অডিও লিংক
+  // মক্কার সুন্দর আজানের অডিও প্লে করার ফাংশন
   Future<void> _playMakkahAzan() async {
     try {
-      // নির্ভরযোগ্য মক্কার আজানের অডিও সোর্স
+      await _audioPlayer.stop(); // আগের কোনো অডিও চললে থামিয়ে দিবে
       await _audioPlayer.play(UrlSource('https://www.islamcan.com/audio/adhan/azan1.mp3'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
