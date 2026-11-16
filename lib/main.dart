@@ -1,106 +1,60 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:adhan/adhan.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 void main() {
-  runApp(const IslamicApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const IslamoicApp());
 }
 
-class IslamicApp extends StatelessWidget {
-  const IslamicApp({super.key});
+class IslamoicApp extends StatelessWidget {
+  const IslamoicApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Islamoic App',
       debugShowCheckedModeBanner: false,
-      title: 'Islamic Life App',
       theme: ThemeData(
-        primarySwatch: Colors.teal,
+        primarySwatch: Colors.green,
         scaffoldBackgroundColor: const Color(0xFFF4F6F9),
       ),
-      home: const HomeScreen(),
+      home: const PrayerHomePage(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class PrayerHomePage extends StatefulWidget {
+  const PrayerHomePage({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<PrayerHomePage> createState() => _PrayerHomePageState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _tasbihCount = 0;
-  String _locationStatus = "Loading location...";
-  
-  // ৫ ওয়াক্ত নামাজের সময়
-  String _fajrTime = "--:--";
-  String _dhuhrTime = "--:--";
-  String _asrTime = "--:--";
-  String _maghribTime = "--:--";
-  String _ishaTime = "--:--";
-
+class _PrayerHomePageState extends State<PrayerHomePage> {
+  // ভেরিয়েবলসমূহ
+  String _locationStatus = "লোকেশন খোঁজা হচ্ছে...";
   PrayerTimes? _prayerTimes;
+  int _tasbihCount = 0;
   final AudioPlayer _audioPlayer = AudioPlayer();
-  Timer? _timer;
-
-  // একই ওয়াক্তে বারবার আজান বাজ যেন না বাজে, সেটি ট্র্যাক করার জন্য
-  String? _lastPlayedPrayerKey;
 
   @override
   void initState() {
     super.initState();
-    _loadTasbihCount();
-    _determinePositionAndCalculateTimes();
-
-    // প্রতি ৩০ সেকেন্ড পর পর সময় চেক করবে এবং ওয়াক্ত মিলে গেলে স্বয়ংক্রিয়ভাবে আজান বাজাবে
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _checkAndPlayAutoAthan();
-    });
+    _determinePositionAndCalculatePrayerTimes();
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadTasbihCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _tasbihCount = prefs.getInt('tasbih_count') ?? 0;
-    });
-  }
-
-  Future<void> _incrementTasbih() async {
-    setState(() {
-      _tasbihCount++;
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('tasbih_count', _tasbihCount);
-  }
-
-  Future<void> _resetTasbih() async {
-    setState(() {
-      _tasbihCount = 0;
-    });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('tasbih_count', 0);
-  }
-
-  Future<void> _determinePositionAndCalculateTimes() async {
+  // ১. জিপিএস লোকেশন বের করে নামাজের সময় ক্যালকুলেট করা
+  Future<void> _determinePositionAndCalculatePrayerTimes() async {
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
-        _locationStatus = "Please enable GPS location.";
+        _locationStatus = "দয়া করে ফোনের জিপিএস (Location) অন করুন।";
       });
       return;
     }
@@ -110,10 +64,17 @@ class _HomeScreenState extends State<HomeScreen> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         setState(() {
-          _locationStatus = "Location permission denied.";
+          _locationStatus = "লোকেশন পারমিশন দেওয়া হয়নি।";
         });
         return;
       }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        _locationStatus = "লোকেশন পারমিশন স্থায়ীভাবে বন্ধ রয়েছে। সেটিংস থেকে অন করুন।";
+      });
+      return;
     }
 
     try {
@@ -121,195 +82,170 @@ class _HomeScreenState extends State<HomeScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      final myCoordinates = Coordinates(position.latitude, position.longitude);
-      final params = CalculationMethod.karachi.getParameters();
+      // অ্যাডান (Adhan) প্যাকেজ দিয়ে নামাজের সময় হিসাব করা
+      final coordinates = Coordinates(position.latitude, position.longitude);
+      final params = CalculationMethod.muslim_world_league.getParameters();
       params.madhab = Madhab.hanafi;
       
-      final now = DateTime.now();
-      final date = DateComponents(now.year, now.month, now.day);
-      _prayerTimes = PrayerTimes(myCoordinates, date, params);
+      final date = DateComponents.from(DateTime.now());
+      final prayerTimes = PrayerTimes(coordinates, date, params);
 
       setState(() {
-        _locationStatus = "GPS Location Active (Auto Athan Enabled)";
-        _fajrTime = _formatTime(_prayerTimes!.fajr);
-        _dhuhrTime = _formatTime(_prayerTimes!.dhuhr);
-        _asrTime = _formatTime(_prayerTimes!.asr);
-        _maghribTime = _formatTime(_prayerTimes!.maghrib);
-        _ishaTime = _formatTime(_prayerTimes!.isha);
+        _prayerTimes = prayerTimes;
+        _locationStatus = "Lat: ${position.latitude.toStringAsFixed(2)}, Lng: ${position.longitude.toStringAsFixed(2)}";
       });
     } catch (e) {
       setState(() {
-        _locationStatus = "Failed to get location or times";
+        _locationStatus = "লোকেশন পেতে সমস্যা হয়েছে: $e";
       });
     }
   }
 
-  String _formatTime(DateTime dateTime) {
-    final localTime = dateTime.toLocal();
-    final hour = localTime.hour > 12 ? localTime.hour - 12 : (localTime.hour == 0 ? 12 : localTime.hour);
-    final minute = localTime.minute.toString().padLeft(2, '0');
-    final period = localTime.hour >= 12 ? 'PM' : 'AM';
-    return "$hour:$minute $period";
-  }
-
-  // অটোমেটিক ওয়াক্ত চেক এবং আজান বাজানোর লজিক
-  void _checkAndPlayAutoAthan() {
-    if (_prayerTimes == null) return;
-
-    final now = DateTime.now();
-    
-    // ৫ ওয়াক্তের সঠিক সময় চেক করা
-    final fajrLocal = _prayerTimes!.fajr.toLocal();
-    final dhuhrLocal = _prayerTimes!.dhuhr.toLocal();
-    final asrLocal = _prayerTimes!.asr.toLocal();
-    final maghribLocal = _prayerTimes!.maghrib.toLocal();
-    final ishaLocal = _prayerTimes!.isha.toLocal();
-
-    String todayKey = "${now.year}-${now.month}-${now.day}";
-
-    if (_isSameMinute(now, fajrLocal) && _lastPlayedPrayerKey != "$todayKey-Fajr") {
-      _lastPlayedPrayerKey = "$todayKey-Fajr";
-      _playAthanAudio("Fajr Athan Time!");
-    } else if (_isSameMinute(now, dhuhrLocal) && _lastPlayedPrayerKey != "$todayKey-Dhuhr") {
-      _lastPlayedPrayerKey = "$todayKey-Dhuhr";
-      _playAthanAudio("Dhuhr Athan Time!");
-    } else if (_isSameMinute(now, asrLocal) && _lastPlayedPrayerKey != "$todayKey-Asr") {
-      _lastPlayedPrayerKey = "$todayKey-Asr";
-      _playAthanAudio("Asr Athan Time!");
-    } else if (_isSameMinute(now, maghribLocal) && _lastPlayedPrayerKey != "$todayKey-Maghrib") {
-      _lastPlayedPrayerKey = "$todayKey-Maghrib";
-      _playAthanAudio("Maghrib Athan Time!");
-    } else if (_isSameMinute(now, ishaLocal) && _lastPlayedPrayerKey != "$todayKey-Isha") {
-      _lastPlayedPrayerKey = "$todayKey-Isha";
-      _playAthanAudio("Isha Athan Time!");
-    }
-  }
-
-  bool _isSameMinute(DateTime t1, DateTime t2) {
-    return t1.year == t2.year &&
-        t1.month == t2.month &&
-        t1.day == t2.day &&
-        t1.hour == t2.hour &&
-        t1.minute == t2.minute;
-  }
-
-  Future<void> _playAthanAudio(String message) async {
-    const audioUrl = "https://islamicfinder.org/audio/athan/makkah_adhan.mp3";
+  // ২. আজানের অডিও টেস্ট করার ফাংশন
+  Future<void> _playTestAthan() async {
     try {
-      await _audioPlayer.play(UrlSource(audioUrl));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), duration: const Duration(seconds: 5), backgroundColor: Colors.teal),
-        );
-      }
+      // অনলাইন সোর্স থেকে অডিও বাজানোর টেস্ট (অথবা লোকাল ফাইল)
+      await _audioPlayer.play(UrlSource('https://islamic-audio.org/athan.mp3'));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("আজানের অডিও প্লে করা হচ্ছে...")),
+      );
     } catch (e) {
-      // হ্যান্ডলিং এরর যদি ইন্টারনেট বা অডিও সোর্সে সমস্যা হয়
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("অডিও প্লে করতে সমস্যা হয়েছে: $e")),
+      );
     }
+  }
+
+  // ৩. তাসবিহ কাউন্টার বাড়ানোর ফাংশন
+  void _incrementTasbih() {
+    setState(() {
+      _tasbihCount++;
+    });
+  }
+
+  // ৪. তাসবিহ রিসেট করার ফাংশন
+  void _resetTasbih() {
+    setState(() {
+      _tasbihCount = 0;
+    });
+  }
+
+  String _formatTime(DateTime? time) {
+    if (time == null) return "--:--";
+    return DateFormat('hh:mm a').format(time);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Islamic Life App'),
-        centerTitle: true,
+        title: const Text('ইসলামিক অ্যাপ & আজান', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.teal.shade700,
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ইনফো কার্ড
+            // লোকেশন স্ট্যাটাস কার্ড
             Card(
               elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '🌍 5 Daily Prayer Times (Auto Athan)',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
+                    const Icon(Icons.location_on, color: Colors.teal, size: 36),
                     const SizedBox(height: 8),
-                    Text(_locationStatus, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    const Text("বর্তমান জিপিএস লোকেশন", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    const Text(
-                      'ℹ️ Keep app open in browser for automatic Athan.',
-                      style: TextStyle(fontSize: 11, color: Colors.indigo, fontStyle: FontStyle.italic),
+                    Text(_locationStatus, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: _determinePositionAndCalculatePrayerTimes,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("লোকেশন ও সময় আপডেট করুন"),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
                     ),
-                    const Divider(height: 20),
-                    _buildClickablePrayerRow('🌅 Fajr (Sehri Ends)', _fajrTime, Colors.indigo),
-                    const Divider(),
-                    _buildClickablePrayerRow('☀️ Dhuhr', _dhuhrTime, Colors.teal),
-                    const Divider(),
-                    _buildClickablePrayerRow(' عصر Asr', _asrTime, Colors.brown),
-                    const Divider(),
-                    _buildClickablePrayerRow('🌇 Maghrib (Iftar)', _maghribTime, Colors.deepOrange),
-                    const Divider(),
-                    _buildClickablePrayerRow('🌙 Isha', _ishaTime, Colors.deepPurple),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
 
-            // ডিজিটাল তাসবিহ সেকশন
+            // নামাজের সময়সূচি সেকশন
+            const Text("আজকের ৫ ওয়াক্ত নামাজের সময়", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
+            const SizedBox(height: 10),
+            
             Card(
               elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  children: [
+                    _buildPrayerRow("ফজর (Fajr)", _formatTime(_prayerTimes?.fajr)),
+                    const Divider(),
+                    _buildPrayerRow("যোহর (Dhuhr)", _formatTime(_prayerTimes?.dhuhr)),
+                    const Divider(),
+                    _buildPrayerRow("আসর (Asr)", _formatTime(_prayerTimes?.asr)),
+                    const Divider(),
+                    _buildPrayerRow("মাগরিব (Maghrib)", _formatTime(_prayerTimes?.maghrib)),
+                    const Divider(),
+                    _buildPrayerRow("এশা (Isha)", _formatTime(_prayerTimes?.isha)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // টেস্ট আজান অডিও বাটন
+            ElevatedButton.icon(
+              onPressed: _playTestAthan,
+              icon: const Icon(Icons.volume_up),
+              label: const Text("Test Athan Audio Now"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade800,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ডিজিটাল তাসবিহ কাউন্টার সেকশন
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    const Text(
-                      '📿 Digital Tasbih Counter',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      '$_tasbihCount',
-                      style: const TextStyle(fontSize: 60, fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
-                    const SizedBox(height: 20),
+                    const Text("ডিজিটাল তাসবিহ কাউন্টার", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
+                    const SizedBox(height: 15),
+                    Text("$_tasbihCount", style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.teal)),
+                    const SizedBox(height: 15),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         ElevatedButton.icon(
                           onPressed: _incrementTasbih,
                           icon: const Icon(Icons.add),
-                          label: const Text('Count', style: TextStyle(fontSize: 16)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          ),
+                          label: const Text("Count (+1)"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
                         ),
                         const SizedBox(width: 15),
-                        IconButton(
+                        ElevatedButton.icon(
                           onPressed: _resetTasbih,
-                          icon: const Icon(Icons.refresh, color: Colors.red, size: 30),
-                          tooltip: 'Reset',
+                          icon: const Icon(Icons.refresh),
+                          label: const Text("Reset"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400, foregroundColor: Colors.white),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // ম্যানুয়াল টেস্ট বাটন
-            ElevatedButton.icon(
-              onPressed: () => _playAthanAudio("Playing Test Athan Audio..."),
-              icon: const Icon(Icons.volume_up),
-              label: const Text('Test Athan Audio Now', style: TextStyle(fontSize: 16)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.all(14),
               ),
             ),
           ],
@@ -318,26 +254,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildClickablePrayerRow(String title, String time, Color color) {
-    return InkWell(
-      onTap: () {
-        _playAthanAudio("Playing Athan for $title");
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.volume_up_outlined, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-              ],
-            ),
-            Text(time, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          ],
-        ),
+  Widget _buildPrayerRow(String prayerName, String prayerTime) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+      row: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(prayerName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(prayerTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
+        ],
       ),
     );
   }
