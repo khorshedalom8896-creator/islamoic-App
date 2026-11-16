@@ -1,10 +1,10 @@
+
 name: Deploy Flutter Web to GitHub Pages
 
 on:
   push:
     branches: [ main, master ]
 
-# এই পারমিশন ব্লকটি যোগ করলেই পারমিশন ডিনাইড এরর চিরতরে চলে যাবে
 permissions:
   contents: write
 
