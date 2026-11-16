@@ -33,6 +33,7 @@
             </intent-filter>
         </activity>
         
+        <!-- ফ্লাটার এম্বেডিং ভার্সন ২ (v1 embedding error দূর করার জন্য আবশ্যিক) -->
         <meta-data
             android:name="flutterEmbedding"
             android:embeddingVersion="2" />
